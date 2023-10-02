@@ -19,7 +19,7 @@ func main() {
 		fmt.Println("Error accepting connection: ", err.Error())
 		os.Exit(1)
 	}
-
+	
 	buffer := make([]byte, 1024)
 	_, err = conn.Read(buffer[:])
 	if err != nil {
@@ -27,15 +27,28 @@ func main() {
 		os.Exit(1)
 	}
 	
-	stringified := string(buffer)
-	fields := strings.Fields(stringified)
-	path := fields[1]
+	request := strings.Split(string(buffer), "\r\n")
+	start_line := strings.Split(request[0], " ")
+	path := start_line[1]
 
+	response := []byte("HTTP/1.1 404 Not Found\r\n\r\n")
 	if path == "/" {
-		data := []byte("HTTP/1.1 200 OK\r\n\r\n")
-		conn.Write(data)
+		response = []byte("HTTP/1.1 200 OK\r\n\r\n")
 	} else {
-		data := []byte("HTTP/1.1 404 Not Found\r\n\r\n")
-		conn.Write(data)
+		blocks := strings.Split(path, "/")
+		if len(blocks) > 2 {
+			req_type := blocks[1]
+			req_str := strings.Join(blocks[2:], "/")
+
+			if req_type == "echo" {
+				data := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(req_str), req_str)
+				response = []byte(data)
+			}
+		}
 	}
+
+	conn.Write(response)
+
+	conn.Close()
+	l.Close()
 }
