@@ -30,34 +30,68 @@ func main() {
 func handleRequest(conn net.Conn) {
 	defer conn.Close()
 
-	buffer := make([]byte, 1024)
-	_, err := conn.Read(buffer[:])
+	buffer := make([]byte, 2048)
+	bytes, err := conn.Read(buffer[:])
 	if err != nil {
 		fmt.Println("Error reading data: ", err.Error())
 		os.Exit(1)
 	}
 
 	// Get initial request data
-	request := strings.Split(string(buffer), "\r\n")
+	request := strings.Split(string(buffer[:bytes]), "\r\n")
 	start_line := strings.Split(request[0], " ")
+	method := start_line[0]
 	path := start_line[1]
 
-	// Map headers for easy access
+	// Map headers and get body if it exists
 	header_map := make(map[string]string)
-	for _, line := range request[2:] {
-		header := strings.Split(line, ": ")
 
-		if len(header) > 1 {
-			header_map[header[0]] = header[1]	
-		}
+	index := 2
+	for request[index] != "" {
+		header := strings.Split(request[index], ": ")
+		header_map[header[0]] = header[1]	
+
+		index++
+	}
+
+	body := ""
+	if index + 1 < len(request) {
+		body = strings.TrimSpace(request[index + 1])
 	}
 
 	// Default response
 	response := []byte("HTTP/1.1 404 Not Found\r\n\r\n")
 
-	// Handle different requests to HTTP server
+	switch method {
+	case "GET":
+		response = handleGET(path, header_map)
+	case "POST":
+		response = handlePOST(path, body)
+	}
+	
+	// Write response to connection
+	conn.Write(response)
+}
+
+func handlePOST(path string, body string) []byte {
+	blocks := strings.Split(path, "/")[1:]
+	req_type := blocks[0]
+
+	switch req_type {
+	case "files":
+		filename := blocks[1]
+		directory := os.Args[2]
+		os.WriteFile(directory + filename, []byte(body), os.FileMode(0666))
+
+		return []byte("HTTP/1.1 201 OK\r\n\r\n")
+	}
+
+	return []byte("HTTP/1.1 404 Not Found\r\n\r\n")
+}
+
+func handleGET(path string, header_map map[string]string) []byte {
 	if path == "/" {
-		response = []byte("HTTP/1.1 200 OK\r\n\r\n")
+		return []byte("HTTP/1.1 200 OK\r\n\r\n")
 	} else {
 		blocks := strings.Split(path, "/")[1:]
 		req_type := blocks[0]
@@ -65,22 +99,21 @@ func handleRequest(conn net.Conn) {
 		switch req_type {
 		case "echo":
 			body := strings.Join(blocks[1:], "/")
-			response = generateResponse("text/plain", body)
+			return generateResponse("text/plain", body)
 		case "user-agent":
-			response = generateResponse("text/plain", header_map["User-Agent"])
+			return generateResponse("text/plain", header_map["User-Agent"])
 		case "files":
 			filename := blocks[1]
 			directory := os.Args[2]
-
 			body, err := os.ReadFile(directory + filename)
+
 			if err == nil {
-				response = generateResponse("application/octet-stream", string(body))
+				return generateResponse("application/octet-stream", string(body))
 			}
 		}
 	}
-	
-	// Write response to connection
-	conn.Write(response)
+
+	return []byte("HTTP/1.1 404 Not Found\r\n\r\n")
 }
 
 func generateResponse(content_type string, body string) []byte {
