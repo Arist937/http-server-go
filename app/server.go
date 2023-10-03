@@ -13,20 +13,30 @@ func main() {
 		fmt.Println("Failed to bind to port 4221")
 		os.Exit(1)
 	}
+	defer l.Close()
 	
-	conn, err := l.Accept()
-	if err != nil {
-		fmt.Println("Error accepting connection: ", err.Error())
-		os.Exit(1)
+	// Run loop until no more connections
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			fmt.Println("Error accepting connection: ", err.Error())
+			os.Exit(1)
+		}
+
+		go handleRequest(conn)
 	}
-	
+}
+
+func handleRequest(conn net.Conn) {
+	defer conn.Close()
+
 	buffer := make([]byte, 1024)
-	_, err = conn.Read(buffer[:])
+	_, err := conn.Read(buffer[:])
 	if err != nil {
 		fmt.Println("Error reading data: ", err.Error())
 		os.Exit(1)
 	}
-	
+
 	request := strings.Split(string(buffer), "\r\n")
 	start_line := strings.Split(request[0], " ")
 	path := start_line[1]
@@ -40,8 +50,6 @@ func main() {
 		}
 	}
 
-	fmt.Println(header_map)
-
 	// Default response
 	response := []byte("HTTP/1.1 404 Not Found\r\n\r\n")
 
@@ -50,7 +58,6 @@ func main() {
 		response = []byte("HTTP/1.1 200 OK\r\n\r\n")
 	} else {
 		blocks := strings.Split(path, "/")[1:]
-		fmt.Println(blocks)
 		req_type := blocks[0]
 
 		if req_type == "echo" {
@@ -62,14 +69,9 @@ func main() {
 	}
 
 	conn.Write(response)
-
-	// Close the connection when done
-	conn.Close()
-	l.Close()
 }
 
 func generateResponse(body string) []byte {
 	response := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(body), body)
-	fmt.Println(response)
 	return []byte(response)
 }
