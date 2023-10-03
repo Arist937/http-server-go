@@ -15,7 +15,7 @@ func main() {
 	}
 	defer l.Close()
 	
-	// Run loop until no more connections
+	// Run loop until no more connections to accept
 	for {
 		conn, err := l.Accept()
 		if err != nil {
@@ -37,10 +37,12 @@ func handleRequest(conn net.Conn) {
 		os.Exit(1)
 	}
 
+	// Get initial request data
 	request := strings.Split(string(buffer), "\r\n")
 	start_line := strings.Split(request[0], " ")
 	path := start_line[1]
 
+	// Map headers for easy access
 	header_map := make(map[string]string)
 	for _, line := range request[2:] {
 		header := strings.Split(line, ": ")
@@ -60,18 +62,28 @@ func handleRequest(conn net.Conn) {
 		blocks := strings.Split(path, "/")[1:]
 		req_type := blocks[0]
 
-		if req_type == "echo" {
+		switch req_type {
+		case "echo":
 			body := strings.Join(blocks[1:], "/")
-			response = generateResponse(body)
-		} else if req_type == "user-agent" {
-			response = generateResponse(header_map["User-Agent"])
+			response = generateResponse("text/plain", body)
+		case "user-agent":
+			response = generateResponse("text/plain", header_map["User-Agent"])
+		case "files":
+			filename := blocks[1]
+			directory := os.Args[2]
+
+			body, err := os.ReadFile(directory + filename)
+			if err == nil {
+				response = generateResponse("application/octet-stream", string(body))
+			}
 		}
 	}
-
+	
+	// Write response to connection
 	conn.Write(response)
 }
 
-func generateResponse(body string) []byte {
-	response := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(body), body)
+func generateResponse(content_type string, body string) []byte {
+	response := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\n\r\n%s", content_type, len(body), body)
 	return []byte(response)
 }
